@@ -61,6 +61,20 @@ export default function Home() {
             </Link>
           </div>
         </div>
+
+        <div className="mt-12">
+          <h2 className="text-2xl font-bold text-white mb-6">TAD (Tadvert)</h2>
+          <div className="grid md:grid-cols-2 gap-6">
+            <Link 
+              href="/tad-scenario" 
+              className="block bg-gray-800 border-2 border-emerald-500/30 hover:border-emerald-500 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-emerald-500/20"
+            >
+              <div className="text-5xl mb-3">📢</div>
+              <h3 className="text-xl font-bold text-white mb-2">Auction Posting Manager</h3>
+              <p className="text-sm text-gray-400">Подбор объявлений, бюджет, публикация</p>
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
