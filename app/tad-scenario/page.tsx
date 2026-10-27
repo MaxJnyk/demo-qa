@@ -156,7 +156,7 @@ export default function TadScenario() {
       if (!campaign) continue;
       if (!remaining.has(campaign.id)) remaining.set(campaign.id, campaign.budgetRemaining);
       const rem = remaining.get(campaign.id);
-      if (rem === null) { result.push(ad); continue; } // безлимит
+      if (rem === null || rem === undefined) { result.push(ad); continue; } // безлимит
       // БАГ: проверяет per_ad_cost (базовая цена), а не реальную (с множителем)
       if (rem >= perAdCost) {
         remaining.set(campaign.id, rem - perAdCost);
@@ -732,7 +732,7 @@ export default function TadScenario() {
                           </button>
                         </div>
                       )}
-                      {(post.status === 'failed' || post.status === 'published') && post.status !== 'removed' && (
+                      {(post.status === 'failed' || post.status === 'published') && (
                         <div className="flex gap-2 mt-3">
                           <button
                             onClick={() => retirePostManual(post.id)}
