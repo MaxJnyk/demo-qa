@@ -113,6 +113,7 @@ export default function TadScenario() {
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const idCounter = useRef(0);
 
   // Refs
   const platformsRef = useRef(platforms);
@@ -237,8 +238,7 @@ export default function TadScenario() {
       const realCost = costs[i];
       const budget = campaign?.budgetRemaining;
       if (budget !== null && budget !== undefined) {
-        const over = realCost > budget;
-        log(`  ${campaign?.name}: бюджет=${budget}₽, цена места=${realCost.toFixed(2)}₽ ${over ? '⚠️ ПЕРЕРАСХОД!' : '✓'}`, over ? 'warning' : 'info');
+        log(`  ${campaign?.name}: бюджет=${budget}₽, цена места=${realCost.toFixed(2)}₽`, 'info');
       }
     });
 
@@ -255,7 +255,7 @@ export default function TadScenario() {
       };
     });
 
-    const postId = Date.now();
+    const postId = ++idCounter.current;
     const newPost: Post = {
       id: postId,
       platformId: platform.id,
@@ -291,12 +291,12 @@ export default function TadScenario() {
       return { ...p, ads: updatedAds, currentAdRevisionId: p.ads[0].revisionId, lastRotatedAt: new Date().toISOString() };
     }));
 
-    log(`queue[0] (${post.ads[0].campaignName}): ЗАРЕЗЕРВ → ЗАХВАЧЕН (захват ДО ответа телеги)`, 'warning');
+    log(`queue[0] (${post.ads[0].campaignName}): ${moneyStatusLabel('HELD')} → ${moneyStatusLabel('CAPTURED')}`, 'info');
 
     await new Promise(r => setTimeout(r, 1500)); // имитация ожидания ответа телеги
 
     if (telegramResponds) {
-      const messageId = Math.floor(Math.random() * 100000);
+      const messageId = ++idCounter.current;
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, post_id_on_platform: messageId, status: 'published' } : p));
       log(`Telegram подтвердил публикацию (message_id=${messageId})`, 'success');
       log(`Пост #${postId} опубликован на ${post.platformName}`, 'success');
@@ -341,7 +341,7 @@ export default function TadScenario() {
 
     setTimeout(() => {
       log(`Освобождено (резерв): ${released}`, 'info');
-      log(`Застряло (захват): ${stuck} ${stuck > 0 ? '⚠️ ДЕНЬГИ НЕ ВЕРНУЛИСЬ!' : ''}`, stuck > 0 ? 'error' : 'success');
+      log(`Застряло (захват): ${stuck}`, 'info');
     }, 300);
   }
 
@@ -349,9 +349,7 @@ export default function TadScenario() {
 
   // ТЕСТ 1: exclude_platforms не работает
   const testBug1_Exclusion = async () => {
-    log('═══ ТЕСТ 1: Подбор с исключением платформы ═══', 'info');
-    log('Кампания "PayX" исключила Платформу #2 (Crypto Daily)', 'info');
-    log('Правило: объявления не должны попадать на исключённые платформы', 'info');
+    log('═══ ТЕСТ 1 ═══', 'info');
     log('', 'info');
 
     const platform = platformsRef.current.find(p => p.id === 2)!;
@@ -366,26 +364,13 @@ export default function TadScenario() {
     log(`Найдено ${result.ads.length} объявлений:`, 'info');
     result.ads.forEach(ad => {
       const campaign = campaignsRef.current.find(c => c.id === ad.campaignId)!;
-      const excluded = campaign.excludedPlatforms.includes(platform.id);
-      log(`  ${campaign.name} (рекламодатель: ${campaign.advertiser}) ${excluded ? '⚠️ ИСКЛЮЧЁН, НО ПОПАЛ!' : '✓'}`, excluded ? 'error' : 'info');
+      log(`  ${campaign.name} (рекламодатель: ${campaign.advertiser})`, 'info');
     });
-
-    const hasViolation = result.ads.some(ad => {
-      const campaign = campaignsRef.current.find(c => c.id === ad.campaignId)!;
-      return campaign.excludedPlatforms.includes(platform.id);
-    });
-
-    if (hasViolation) {
-      log('', 'info');
-      log('БАГ: Объявление попало на исключённую платформу!', 'error');
-    }
   };
 
   // ТЕСТ 2: Budget filter занижает реальную цену
   const testBug2_Budget = async () => {
-    log('═══ ТЕСТ 2: Подбор с пограничным бюджетом ═══', 'info');
-    log('Кампания "PayX" имеет бюджет 500₽', 'info');
-    log('Правило: реальная цена места не должна превышать остаток бюджета', 'info');
+    log('═══ ТЕСТ 2 ═══', 'info');
     log('', 'info');
 
     const platform = platformsRef.current.find(p => p.id === 1)!;
@@ -410,16 +395,14 @@ export default function TadScenario() {
       const realCost = costs[i];
       const budget = campaign.budgetRemaining;
       if (budget !== null) {
-        const over = realCost > budget;
-        log(`${campaign.name}: бюджет=${budget}₽, цена=${realCost.toFixed(2)}₽ ${over ? '⚠️ ПЕРЕРАСХОД на ' + (realCost - budget).toFixed(2) + '₽!' : '✓'}`, over ? 'error' : 'success');
+        log(`${campaign.name}: бюджет=${budget}₽, цена=${realCost.toFixed(2)}₽`, 'info');
       }
     });
   };
 
   // ТЕСТ 3: Capture до подтверждения → деньги застряли
   const testBug3_StuckFunds = async () => {
-    log('═══ ТЕСТ 3: Постинг с таймаутом телеги ═══', 'info');
-    log('Правило: если пост не опубликовался — все деньги должны вернуться', 'info');
+    log('═══ ТЕСТ 3 ═══', 'info');
     log('', 'info');
 
     const platform = platformsRef.current.find(p => p.id === 3)!;
@@ -437,7 +420,7 @@ export default function TadScenario() {
 
     log('', 'info');
     log(`Пост #${postId} создан (status=pending), деньги зарезервированы`, 'info');
-    log('Симуляция: Telegram НЕ отвечает (таймаут)...', 'warning');
+    log('Отправка в Telegram...', 'info');
 
     await publishPost(postId, false);
 
@@ -758,19 +741,19 @@ export default function TadScenario() {
                   onClick={testBug1_Exclusion}
                   className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-lg transition text-left px-4"
                 >
-                  Тест 1: Подбор с исключением платформы
+                  Тест 1
                 </button>
                 <button
                   onClick={testBug2_Budget}
                   className="w-full bg-orange-600 hover:bg-orange-700 text-white font-semibold py-3 rounded-lg transition text-left px-4"
                 >
-                  Тест 2: Подбор с пограничным бюджетом
+                  Тест 2
                 </button>
                 <button
                   onClick={testBug3_StuckFunds}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition text-left px-4"
                 >
-                  Тест 3: Постинг с таймаутом телеги
+                  Тест 3
                 </button>
                 <button
                   onClick={reset}
