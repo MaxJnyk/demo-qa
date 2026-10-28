@@ -117,6 +117,10 @@ export default function TadScenario() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [logs, setLogs] = useState<{msg: string, hint: string, type: string}[]>([]);
   const [showHints, setShowHints] = useState(false);
+  const [runningTest, setRunningTest] = useState<number | null>(null);
+  const [statusLine, setStatusLine] = useState<string | null>(null);
+  const [highlight, setHighlight] = useState<{ platformId: number | null; campaignIds: number[] }>({ platformId: null, campaignIds: [] });
+  const [freshPostId, setFreshPostId] = useState<number | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
   const [loading, setLoading] = useState(false);
@@ -135,13 +139,23 @@ export default function TadScenario() {
     setLogs(prev => [...prev, { msg: `[${time}] ${icon} ${msg}`, hint, type }].slice(-200));
   };
 
+  // Единая обёртка тестов: блокирует кнопки на время прогона
+  const runTest = async (n: number, fn: () => Promise<void>) => {
+    if (runningTest || loading) return;
+    setRunningTest(n);
+    try { await fn(); } finally { setRunningTest(null); }
+  };
+
   async function runMatching(platformId: number) {
     const platform = platformsRef.current.find(p => p.id === platformId);
     if (!platform || platform.hasActivePost) return;
     setLoading(true);
+    setHighlight({ platformId, campaignIds: [] });
+    setStatusLine(`Подбор для Площадки #${platformId} (${platform.name})…`);
     log(`Подбор для Площадки #${platformId} (${platform.name})...`);
     const result = collectAuctionAds(platform, campaignsRef.current);
-    if (!result) { log('Не нашлось объявлений', 'error'); setLoading(false); return; }
+    if (!result) { log('Не нашлось объявлений', 'error'); setLoading(false); setStatusLine(null); return; }
+    setHighlight({ platformId, campaignIds: result.ads.map(a => a.campaignId) });
     log(`Найдено ${result.ads.length} объявлений, per_ad_cost=${result.perAdCost.toFixed(2)}₽`);
     const costs = getCostsForItems(platform.auctionCost, result.ads.length);
     result.ads.forEach((ad, i) => {
@@ -160,7 +174,9 @@ export default function TadScenario() {
     };
     setPosts(prev => [...prev, newPost]);
     setPlatforms(prev => prev.map(p => p.id === platformId ? { ...p, hasActivePost: true, status: 'busy' } : p));
-    log(`Пост #${postId} создан (status=pending), деньги зарезервированы`);
+    setFreshPostId(postId);
+    log(`Пост #${postId} создан (status=pending), деньги заморожены`);
+    setStatusLine(`Подбор завершён — пост создан на Площадке #${platformId}, смотри колонку «Посты»`);
     setLoading(false);
   }
 
@@ -181,7 +197,7 @@ export default function TadScenario() {
       log(`Telegram подтвердил (message_id=${messageId})`, 'success');
     } else {
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'failed' } : p));
-      log(`Telegram не ответил (таймаут)`, 'info', 'Пост не опубликовался — теперь тедаун должен вернуть ВСЕ деньги (резерв + захват)');
+      log(`Telegram не ответил (таймаут)`, 'info', 'Пост не опубликовался — теперь тедаун должен вернуть ВСЕ деньги: и Замороженные, и Списанные');
       log(`Пост #${postId} → failed`, 'info', 'Пост не опубликовался. Деньги должны вернуться');
     }
     setLoading(false);
@@ -201,8 +217,8 @@ export default function TadScenario() {
     }));
     setPlatforms(prev => prev.map(p => p.id === post.platformId ? { ...p, hasActivePost: false, status: 'active' } : p));
     log(`Тедаун поста #${postId}...`);
-    log(`Освобождено (резерв): ${released}`);
-    log(`Застряло (списано): ${stuck}`, 'info', stuck > 0 ? `⚠️ БАГ: ДЕНЬГИ НЕ ВЕРНУЛИСЬ! Тедаун возвращает только замороженные, но не списанные. ${stuck} объявление(й) осталось со списанными деньгами` : '');
+    log(`Возвращено (замороженных): ${released}`);
+    log(`Застряло (списанных): ${stuck}`, 'info', stuck > 0 ? `⚠️ БАГ: ДЕНЬГИ НЕ ВЕРНУЛИСЬ! Тедаун возвращает только замороженные, но не списанные. ${stuck} объявление(й) осталось со списанными деньгами` : '');
   }
 
   function toggleExclusion(campaignId: number, platformId: number) {
@@ -229,12 +245,18 @@ export default function TadScenario() {
     setCampaigns(INITIAL_CAMPAIGNS);
     setPosts([]);
     setLogs([]);
+    setHighlight({ platformId: null, campaignIds: [] });
+    setFreshPostId(null);
+    setStatusLine(null);
+    setRunningTest(null);
     log('Сброшено');
   }
 
   // Тесты
   const testBug1 = async () => {
     log('═══ ТЕСТ 1 ═══', 'info'); log('', 'info');
+    setStatusLine('ТЕСТ 1: проверяем исключение площадок — подбор для Площадки #2 (РИА Новости)…');
+    setHighlight({ platformId: 2, campaignIds: [] });
     await new Promise(r => setTimeout(r, 400));
     log('Кампания "PayX" исключила Площадку #2 (РИА Новости)', 'info');
     await new Promise(r => setTimeout(r, 400));
@@ -246,6 +268,7 @@ export default function TadScenario() {
     await new Promise(r => setTimeout(r, 500));
     const result = collectAuctionAds(platform, campaignsRef.current);
     if (!result) return;
+    setHighlight({ platformId: 2, campaignIds: result.ads.map(a => a.campaignId) });
     log(`Найдено ${result.ads.length} объявлений:`, 'info');
     await new Promise(r => setTimeout(r, 300));
     for (const ad of result.ads) {
@@ -269,14 +292,18 @@ export default function TadScenario() {
     };
     setPosts(prev => [...prev, newPost]);
     setPlatforms(prev => prev.map(p => p.id === platform.id ? { ...p, hasActivePost: true, status: 'busy' } : p));
-    log(`Пост #${postId} создан (status=pending), деньги зарезервированы`, 'info');
+    setFreshPostId(postId);
+    log(`Пост #${postId} создан (status=pending), деньги заморожены`, 'info');
     await new Promise(r => setTimeout(r, 400));
     log('', 'info');
     log('Подбор завершён', 'info', 'БАГ: Объявление попало на исключённую площадку! exclude_platforms не работает');
+    setStatusLine('ТЕСТ 1: пост создан на Площадке #2 — сравни пост с карточкой кампании PayX слева');
   };
 
   const testBug2 = async () => {
     log('═══ ТЕСТ 2 ═══', 'info'); log('', 'info');
+    setStatusLine('ТЕСТ 2: подбор с пограничным бюджетом (у PayX осталось 500₽)…');
+    setHighlight({ platformId: 1, campaignIds: [] });
     await new Promise(r => setTimeout(r, 400));
     log('Кампания "PayX" имеет бюджет 500₽', 'info');
     await new Promise(r => setTimeout(r, 400));
@@ -288,6 +315,7 @@ export default function TadScenario() {
     await new Promise(r => setTimeout(r, 500));
     const result = collectAuctionAds(platform, campaignsRef.current);
     if (!result) return;
+    setHighlight({ platformId: 1, campaignIds: result.ads.map(a => a.campaignId) });
     log(`Подобрано ${result.ads.length} объявлений, per_ad_cost = ${result.perAdCost.toFixed(2)}₽`, 'info'); log('', 'info');
     await new Promise(r => setTimeout(r, 400));
     log('Реальные цены мест (с множителями):', 'info');
@@ -321,19 +349,25 @@ export default function TadScenario() {
     };
     setPosts(prev => [...prev, newPost]);
     setPlatforms(prev => prev.map(p => p.id === platform.id ? { ...p, hasActivePost: true, status: 'busy' } : p));
-    log(`Пост #${postId} создан (status=pending), деньги зарезервированы`, 'info');
+    setFreshPostId(postId);
+    log(`Пост #${postId} создан (status=pending), деньги заморожены`, 'info');
+    setStatusLine('ТЕСТ 2: пост создан — сравни цену 1-го места в посте с бюджетом кампании PayX (500₽)');
   };
 
   const testBug3 = async () => {
     log('═══ ТЕСТ 3 ═══', 'info'); log('', 'info');
+    setStatusLine('ТЕСТ 3: публикация с таймаутом Telegram — следи за статусами денег в посте…');
+    setHighlight({ platformId: 3, campaignIds: [] });
     await new Promise(r => setTimeout(r, 400));
     log('Правило: если пост не опубликовался — все деньги должны вернуться', 'info'); log('', 'info');
     await new Promise(r => setTimeout(r, 400));
     const platform = platformsRef.current.find(p => p.id === 3)!;
+    if (platform.hasActivePost) { log('Площадка #3 уже занята — сбрось сначала', 'info'); setStatusLine(null); return; }
     log(`Запуск подбора для Площадки #3 (${platform.name})...`);
     await new Promise(r => setTimeout(r, 500));
     const result = collectAuctionAds(platform, campaignsRef.current);
     if (!result) return;
+    setHighlight({ platformId: 3, campaignIds: result.ads.map(a => a.campaignId) });
     log(`Создание поста с ${result.ads.length} объявлениями...`);
     await new Promise(r => setTimeout(r, 400));
     log(`Расчёт цен для ${result.ads.length} объявлений:`, 'info');
@@ -358,7 +392,8 @@ export default function TadScenario() {
     };
     setPosts(prev => [...prev, newPost]);
     setPlatforms(prev => prev.map(p => p.id === platform.id ? { ...p, hasActivePost: true, status: 'busy' } : p));
-    log(`Пост #${postId} создан (status=pending), деньги зарезервированы`, 'info');
+    setFreshPostId(postId);
+    log(`Пост #${postId} создан (status=pending), деньги заморожены`, 'info');
     await new Promise(r => setTimeout(r, 600));
     log('Симуляция: Telegram НЕ отвечает (таймаут)...', 'info', 'Пост не опубликовался — теперь тедаун должен вернуть ВСЕ деньги');
     await publishPost(postId, false);
@@ -367,6 +402,7 @@ export default function TadScenario() {
     log('Запуск тедауна (retire_due_auction_posts)...', 'info');
     await new Promise(r => setTimeout(r, 400));
     retirePost(postId);
+    setStatusLine('ТЕСТ 3: тедаун завершён — проверь статусы денег в посте (Списаны / Возвращены)');
   };
 
   return (
@@ -386,20 +422,33 @@ export default function TadScenario() {
         </div>
       </header>
 
+      {/* Статус выполнения — что происходит прямо сейчас */}
+      {statusLine && (
+        <div className="max-w-[1800px] mx-auto px-6 pt-3">
+          <div className={`flex items-center gap-2.5 text-sm rounded-lg px-3.5 py-2.5 border transition-colors ${runningTest !== null ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+            {runningTest !== null
+              ? <span className="inline-block w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
+              : <span className="shrink-0">✓</span>}
+            <span>{statusLine}</span>
+          </div>
+        </div>
+      )}
+
       {/* Rules */}
       <div className="max-w-[1800px] mx-auto px-6 pt-4">
-        <details className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
+        <details open className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm">
           <summary className="font-semibold text-amber-800 cursor-pointer">📋 Задача: протестируй систему и найди проблемы</summary>
-          <div className="text-xs text-slate-700 space-y-1 mt-2">
-            <p><strong>Контекст:</strong> TAD — платформа для размещения рекламы в Telegram-каналах. Подбор объявлений: фильтры → бюджет → скоринг → создание поста → публикация.</p>
-            <p><strong>Правила:</strong></p>
-            <ul className="ml-4 space-y-0.5">
-              <li>• Рекламодатель может исключать площадки — его объявления не должны туда попадать</li>
-              <li>• Budget filter должен гарантировать, что <strong>реальная цена места</strong> ≤ остатка бюджета</li>
-              <li>• Цена места = базовая × множитель (1.20, 1.15, 1.10, ...) — первое место дороже</li>
-              <li>• Если пост не опубликовался — <strong>все деньги</strong> (резерв + захват) должны вернуться</li>
-              <li>• Деньги захватываются когда объявление становится текущим в ротации</li>
+          <div className="text-xs text-slate-700 space-y-2 mt-2">
+            <p><strong>Контекст:</strong> TAD — платформа для размещения рекламы в Telegram-каналах. Подбор объявлений: фильтры → бюджет → скоринг → создание поста → публикация в Telegram.</p>
+            <p><strong>Правила системы:</strong></p>
+            <ul className="ml-4 space-y-1">
+              <li>• <strong>Исключения:</strong> рекламодатель может исключить площадку — его объявления не должны туда попадать</li>
+              <li>• <strong>Бюджет:</strong> реальная цена места не должна превышать остаток бюджета кампании</li>
+              <li>• <strong>Цена места:</strong> базовая × множитель (1-е место ×1.20, 2-е ×1.15, ... — первое место дороже)</li>
+              <li>• <strong>Деньги:</strong> при создании поста — <strong>Заморожены</strong>; когда объявление показывается — <strong>Списаны</strong>; если показа не было — <strong>Возвращены</strong></li>
+              <li>• Если пост не опубликовался — <strong>все деньги должны вернуться</strong> рекламодателю</li>
             </ul>
+            <p className="text-slate-500">Как исследовать: кнопки «Тест 1–3» внизу прогоняют готовые сценарии; всё можно крутить и вручную (кнопки на карточках площадок, кампаний и постов). Все действия и расчёты пишутся в лог внизу страницы.</p>
           </div>
         </details>
       </div>
@@ -413,7 +462,7 @@ export default function TadScenario() {
             <p className="text-xs text-slate-500 mb-3">Telegram-каналы для размещения рекламы</p>
             <div className="space-y-3">
               {platforms.map(p => (
-                <div key={p.id} className={`rounded-lg border p-3 ${p.hasActivePost ? 'border-slate-200 bg-slate-50 opacity-60' : 'border-slate-200 bg-white'}`}>
+                <div key={p.id} className={`rounded-lg border p-3 transition ${highlight.platformId === p.id ? 'border-amber-300 ring-2 ring-amber-300' : ''} ${p.hasActivePost ? 'border-slate-200 bg-slate-50 opacity-60' : 'border-slate-200 bg-white'}`}>
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h4 className="font-semibold text-slate-900 text-sm">#{p.id} {p.name}</h4>
@@ -443,7 +492,7 @@ export default function TadScenario() {
             <p className="text-xs text-slate-500 mb-3">Рекламные кампании с бюджетом и настройками</p>
             <div className="space-y-3 max-h-[500px] overflow-y-auto">
               {campaigns.map(c => (
-                <div key={c.id} className="rounded-lg border border-slate-200 p-3 hover:shadow-sm transition">
+                <div key={c.id} className={`rounded-lg border border-slate-200 p-3 hover:shadow-sm transition ${highlight.campaignIds.includes(c.id) ? 'ring-2 ring-amber-300' : ''}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div>
                       <h4 className="font-semibold text-slate-900 text-sm">{c.name}</h4>
@@ -513,7 +562,7 @@ export default function TadScenario() {
             ) : (
               <div className="space-y-3 max-h-[500px] overflow-y-auto">
                 {posts.map(post => (
-                  <div key={post.id} className={`rounded-lg border p-3 ${post.status === 'pending' ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-200'}`}>
+                  <div key={post.id} className={`rounded-lg border p-3 ${freshPostId === post.id ? 'border-amber-300 ring-2 ring-amber-300' : post.status === 'pending' ? 'border-blue-300 ring-2 ring-blue-100' : 'border-slate-200'}`}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <h4 className="font-semibold text-slate-900 text-sm">Пост #{post.id.toString().slice(-6)}</h4>
@@ -570,9 +619,15 @@ export default function TadScenario() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
             <h3 className="font-bold text-slate-900 mb-3">Сценарии</h3>
             <div className="space-y-2">
-              <button onClick={testBug1} className="w-full bg-red-50 hover:bg-red-100 text-red-700 font-medium py-2.5 rounded-lg transition text-sm border border-red-200">Тест 1</button>
-              <button onClick={testBug2} className="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 font-medium py-2.5 rounded-lg transition text-sm border border-orange-200">Тест 2</button>
-              <button onClick={testBug3} className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 font-medium py-2.5 rounded-lg transition text-sm border border-purple-200">Тест 3</button>
+              <button onClick={() => runTest(1, testBug1)} disabled={runningTest !== null} className="w-full bg-red-50 hover:bg-red-100 text-red-700 font-medium py-2.5 rounded-lg transition text-sm border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                {runningTest === 1 ? '⏳ Тест 1 — выполняется…' : '▶ Тест 1'}
+              </button>
+              <button onClick={() => runTest(2, testBug2)} disabled={runningTest !== null} className="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 font-medium py-2.5 rounded-lg transition text-sm border border-orange-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                {runningTest === 2 ? '⏳ Тест 2 — выполняется…' : '▶ Тест 2'}
+              </button>
+              <button onClick={() => runTest(3, testBug3)} disabled={runningTest !== null} className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 font-medium py-2.5 rounded-lg transition text-sm border border-purple-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                {runningTest === 3 ? '⏳ Тест 3 — выполняется…' : '▶ Тест 3'}
+              </button>
             </div>
             <div className="mt-3 p-3 bg-slate-50 rounded-lg text-xs space-y-1">
               <div className="flex items-center gap-2"><span className="text-blue-700 font-mono">Заморожены</span><span className="text-slate-500">→ на холде, можно вернуть</span></div>
@@ -583,14 +638,14 @@ export default function TadScenario() {
           <div className="bg-slate-900 rounded-xl border border-slate-700 p-4 lg:col-span-2 relative">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-slate-300 font-mono text-sm">Логи:</h3>
-              <button onClick={() => setShowHints(!showHints)} title="Показать подсказки" className={`text-xs px-2 py-1 rounded transition ${showHints ? 'text-amber-400 bg-amber-900/30' : 'text-slate-500 hover:text-slate-300'}`}>
-                {showHints ? '👁️' : '👁️‍🗨️'}
+              <button onClick={() => setShowHints(!showHints)} title={showHints ? 'Подсказки включены — нажми, чтобы скрыть' : 'Показать подсказки к багам в логах'} className={`text-base leading-none px-2 py-1 rounded-md border transition ${showHints ? 'bg-amber-500/20 border-amber-400/60' : 'bg-slate-800 border-slate-600 opacity-50 hover:opacity-100'}`}>
+                👁
               </button>
             </div>
             <div className="font-mono text-xs space-y-0.5 h-[300px] overflow-y-auto">
               {logs.length === 0 ? <p className="text-slate-600">Нет логов</p> :
                 logs.map((l, i) => (
-                  <div key={i} className={`px-2 py-0.5 rounded animate-[fadeIn_0.3s_ease-in-out] ${l.type === 'error' ? 'text-red-400' : l.type === 'success' ? 'text-green-400' : l.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'}`}>
+                  <div key={i} className={`px-2 py-0.5 rounded animate-[fadeIn_0.3s_ease-in-out] ${l.type === 'error' ? 'text-red-400' : l.type === 'success' ? 'text-green-400' : l.type === 'warning' ? 'text-yellow-400' : 'text-slate-300'} ${showHints && l.hint ? 'bg-amber-900/30' : ''}`}>
                     {l.msg}
                     {showHints && l.hint && <span className="block ml-4 text-amber-400 text-xs">  ↳ {l.hint}</span>}
                   </div>
