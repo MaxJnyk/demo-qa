@@ -522,10 +522,13 @@ export default function TadScenario() {
                       <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(post.status)}`}>{post.status}</span>
                     </div>
                     <div className="text-xs text-slate-500 mb-2">Всего: {post.totalCost}₽ • msg: {post.post_id_on_platform ?? '—'}</div>
+                    <div className="text-xs text-slate-400 mb-2 bg-slate-50 rounded px-2 py-1">
+                      Базовая цена места: {(post.totalCost / post.ads.length).toFixed(2)}₽ • Множители: 1е место ×{COST_MULTIPLIERS[0]}, 2е ×{COST_MULTIPLIERS[1]}, 3е ×{COST_MULTIPLIERS[2]}...
+                    </div>
                     <div className="space-y-1">
                       {post.ads.map(ad => (
                         <div key={ad.revisionId} className="flex items-center justify-between text-xs bg-slate-50 rounded px-2 py-1">
-                          <span className="text-slate-700">#{ad.place} {ad.campaignName}</span>
+                          <span className="text-slate-700">#{ad.place} {ad.campaignName} <span className="text-slate-400">(×{COST_MULTIPLIERS[ad.place - 1]})</span></span>
                           <div className="flex items-center gap-2">
                             <span className="text-slate-500 font-mono">{ad.actualCost.toFixed(2)}₽</span>
                             <span title={ad.moneyStatus === 'HELD' ? 'Деньги на холде, рекламодатель их ещё может получить назад' : ad.moneyStatus === 'CAPTURED' ? 'Деньги ушли платформе, вернуть уже нельзя' : 'Деньги вернулись рекламодателю'} className={`px-1.5 py-0.5 rounded text-xs font-medium cursor-help ${moneyColor(ad.moneyStatus)}`}>{moneyLabel(ad.moneyStatus)}</span>
@@ -535,7 +538,12 @@ export default function TadScenario() {
                     </div>
                     {post.status === 'pending' && (
                       <div className="mt-3 border-t border-slate-200 pt-2">
-                        <p className="text-xs text-slate-500 mb-2">Дальше: нажми чтобы отправить в Telegram</p>
+                        <p className="text-xs text-slate-500 mb-2">
+                          {post.ads.length >= 3
+                            ? '✅ Подбор завершён. Сравни кампании слева с постом — все ли исключения учтены?'
+                            : '✅ Подбор завершён. Сравни бюджет кампании слева с ценой места в посте. Дальше можно опубликовать или посмотреть таймаут:'
+                          }
+                        </p>
                         <div className="flex gap-2">
                           <button onClick={() => publishPost(post.id, true)} disabled={loading} className="text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-3 py-1.5 rounded">✓ Опубликовать</button>
                           <button onClick={() => publishPost(post.id, false)} disabled={loading} className="text-xs bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-3 py-1.5 rounded">✗ Таймаут телеги</button>
