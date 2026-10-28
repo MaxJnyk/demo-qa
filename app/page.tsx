@@ -42,17 +42,8 @@ export default function Home() {
         <div>
           <h2 className="text-2xl font-bold text-white mb-6">omniCRM</h2>
           <div className="grid md:grid-cols-2 gap-6">
-            <Link 
-              href="/omnicrm-scenario-1" 
-              className="block bg-gray-800 border-2 border-blue-500/30 hover:border-blue-500 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-blue-500/20"
-            >
-              <div className="text-5xl mb-3">�</div>
-              <h3 className="text-xl font-bold text-white mb-2">Групповые комнаты</h3>
-              <p className="text-sm text-gray-400">Лимиты клиентов и операторов</p>
-            </Link>
-
-            <Link 
-              href="/omnicrm-scenario-2" 
+            <Link
+              href="/omnicrm-scenario-2"
               className="block bg-gray-800 border-2 border-cyan-500/30 hover:border-cyan-500 rounded-2xl p-6 transition-all hover:shadow-lg hover:shadow-cyan-500/20"
             >
               <div className="text-5xl mb-3">🔒</div>
